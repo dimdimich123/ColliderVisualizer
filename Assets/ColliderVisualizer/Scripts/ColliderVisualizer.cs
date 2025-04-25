@@ -117,7 +117,7 @@ namespace ColliderVisualizer
         [Header("Wire Quality")] 
         [SerializeField, Range(3, 64)] private int wireSegments = 24;
 
-        [SerializeField, Range(0, 100000)] private int maxMeshTriangles = 0; // 0 = without limit
+        [SerializeField, HideInInspector, Range(0, 100000)] private int maxMeshTriangles = 0; // 0 = without limit
         [SerializeField, Range(2, 32)] private int capsuleArcSegments = 8;
 
         [SerializeField, HideInInspector] private Mesh meshBox;
