@@ -170,7 +170,7 @@ namespace ColliderVisualizer
                 wireMat.SetColor(ColorPropertyID, wireColor);
                 wireMat.SetPass(0);
 
-                if (col is SphereCollider)
+                if (col is SphereCollider or CapsuleCollider)
                 {
                     GL.Begin(GL.LINES);
                     GL.Color(wireColor);
@@ -225,22 +225,17 @@ namespace ColliderVisualizer
 
         private void DrawSolid(Collider collider)
         {
-            var tf = transform;
-            var rotation = tf.rotation;
-            var scale = tf.lossyScale;
-            var position = tf.position;
-
             switch (collider)
             {
                 case BoxCollider box:
                     Graphics.DrawMeshNow(meshBox,
-                        Matrix4x4.TRS(position + rotation * box.center, rotation, Vector3.Scale(box.size, scale)));
+                        Matrix4x4.TRS(_transform.position + _transform.rotation * Vector3.Scale(box.center, _transform.lossyScale), _transform.rotation, Vector3.Scale(box.size, _transform.lossyScale)));
                     break;
 
                 case SphereCollider sphere:
-                    float scaledRadius = sphere.radius * MaxAbsAxis(scale);
+                    float scaledRadius = sphere.radius * MaxAbsAxis(_transform.lossyScale);
                     Graphics.DrawMeshNow(meshSphere,
-                        Matrix4x4.TRS(position + rotation * sphere.center, rotation, Vector3.one * scaledRadius * 2f));
+                        Matrix4x4.TRS(_transform.position + _transform.rotation * Vector3.Scale(sphere.center, _transform.lossyScale), _transform.rotation, Vector3.one * scaledRadius * 2f));
                     break;
 
                 case CapsuleCollider capsule:
@@ -249,7 +244,7 @@ namespace ColliderVisualizer
 
                 case MeshCollider meshCol:
                     if (meshCol.sharedMesh != null)
-                        Graphics.DrawMeshNow(meshCol.sharedMesh, tf.localToWorldMatrix);
+                        Graphics.DrawMeshNow(meshCol.sharedMesh, _transform.localToWorldMatrix);
                     break;
             }
         }
@@ -263,7 +258,7 @@ namespace ColliderVisualizer
                     break;
 
                 case SphereCollider sphere:
-                    DrawWireSphere(sphere.center, sphere.radius);
+                    DrawWireSphere(sphere);
                     break;
 
                 case CapsuleCollider capsule:
@@ -306,10 +301,9 @@ namespace ColliderVisualizer
 
         #region Sphere
 
-        private void DrawWireSphere(Vector3 center, float radius)
+        private void DrawWireSphere(SphereCollider sphere)
         {
-            float maxScale = MaxAbsAxis(_transform.lossyScale);
-            float scaledRadius = radius * maxScale;
+            float scaledRadius = sphere.radius * MaxAbsAxis(transform.lossyScale);
             float angleStep = 360f / wireSegments;
 
             for (int i = 0; i < wireSegments; i++)
@@ -317,7 +311,7 @@ namespace ColliderVisualizer
                 float a0 = Mathf.Deg2Rad * i * angleStep;
                 float a1 = Mathf.Deg2Rad * (i + 1) * angleStep;
 
-                Vector3 c = _transform.TransformPoint(center);
+                Vector3 c = _transform.TransformPoint(sphere.center);
 
                 // XY
                 Vector3 p0 = c + _transform.rotation * new Vector3(Mathf.Cos(a0), Mathf.Sin(a0), 0) * scaledRadius;
@@ -343,61 +337,66 @@ namespace ColliderVisualizer
 
         #region Capsule
 
-        private void GetCapsuleAxisAndScale(CapsuleCollider capsule, out Vector3 up, out Quaternion rotation,
-            out float radiusScale, out float heightScale)
-        {
-            up = Vector3.up;
-            rotation = transform.rotation;
-            radiusScale = 1f;
-            heightScale = 1f;
-
-            switch (capsule.direction)
-            {
-                case 0:
-                    up = Vector3.right;
-                    rotation *= Quaternion.Euler(0, 0, -90);
-                    radiusScale = Mathf.Max(transform.lossyScale.y, transform.lossyScale.z);
-                    heightScale = transform.lossyScale.x;
-                    break;
-                case 1:
-                    up = Vector3.up;
-                    radiusScale = Mathf.Max(transform.lossyScale.x, transform.lossyScale.z);
-                    heightScale = transform.lossyScale.y;
-                    break;
-                case 2:
-                    up = Vector3.forward;
-                    rotation *= Quaternion.Euler(90, 0, 0);
-                    radiusScale = Mathf.Max(transform.lossyScale.x, transform.lossyScale.y);
-                    heightScale = transform.lossyScale.z;
-                    break;
-            }
-        }
-
         private void DrawCapsuleSolid(CapsuleCollider capsule)
         {
-            GetCapsuleAxisAndScale(capsule, out var up, out var rotation, out var radiusScale, out var heightScale);
-
             float radius = capsule.radius;
             float height = capsule.height;
             Vector3 center = capsule.center;
 
-            float worldRadius = radius * radiusScale;
-            float worldHeight = height * heightScale;
-            float cylinderHeight = Mathf.Max(0f, worldHeight - 2f * worldRadius);
+            float cylinderHeight = Mathf.Max(0f, height - 2f * radius);
 
-            Vector3 worldCenter = _transform.position + _transform.rotation * center;
-            Vector3 top = worldCenter + up * (cylinderHeight * 0.5f);
-            Vector3 bottom = worldCenter - up * (cylinderHeight * 0.5f);
+            Quaternion rotation = transform.rotation;
+            Vector3 up = Vector3.up;
 
-            Vector3 cylinderScale = new Vector3(worldRadius, cylinderHeight, worldRadius);
-            Vector3 sphereScale = Vector3.one * worldRadius;
+            Vector3 lossyScale = transform.lossyScale;
+            float heightScale = 1f;
+            float radiusScale = 1f;
+
+            switch (capsule.direction)
+            {
+                case 0: // X-axis
+                    up = Vector3.right;
+                    rotation *= Quaternion.Euler(0, 0, -90);
+
+                    heightScale = lossyScale.x;
+                    radiusScale = Mathf.Max(lossyScale.y, lossyScale.z);
+                    break;
+
+                case 1: // Y-axis
+                    up = Vector3.up;
+
+                    heightScale = lossyScale.y;
+                    radiusScale = Mathf.Max(lossyScale.x, lossyScale.z);
+                    break;
+
+                case 2: // Z-axis
+                    up = Vector3.forward;
+                    rotation *= Quaternion.Euler(90, 0, 0);
+
+                    heightScale = lossyScale.z;
+                    radiusScale = Mathf.Max(lossyScale.x, lossyScale.y);
+                    break;
+            }
+
+            Vector3 worldCenter = transform.TransformPoint(center);
+            Vector3 worldUp = transform.TransformDirection(up);
+
+            float scaledRadius = radius * radiusScale;
+            float scaledHeight = (height * heightScale) - 2f * scaledRadius;
+            scaledHeight = Mathf.Max(0f, scaledHeight);
+
+            Vector3 top = worldCenter + worldUp * (scaledHeight * 0.5f);
+            Vector3 bottom = worldCenter - worldUp * (scaledHeight * 0.5f);
+
+            Vector3 cylinderScale = new Vector3(scaledRadius, scaledHeight, scaledRadius);
+            Vector3 sphereScale = Vector3.one * scaledRadius;
 
             Graphics.DrawMeshNow(meshCylinder, Matrix4x4.TRS(worldCenter, rotation, cylinderScale));
             Graphics.DrawMeshNow(upperHalfSphere, Matrix4x4.TRS(top, rotation, sphereScale));
             Graphics.DrawMeshNow(lowerHalfSphere, Matrix4x4.TRS(bottom, rotation, sphereScale));
         }
-
-
+        
+        
         private void DrawWireCapsule(CapsuleCollider capsule)
         {
             Vector3 center = capsule.center;
@@ -405,60 +404,101 @@ namespace ColliderVisualizer
             float height = capsule.height;
 
             Vector3 up = Vector3.up;
+            Vector3 right = Vector3.right;
+            Vector3 forward = Vector3.forward;
+            Quaternion rotation = transform.rotation;
+            Vector3 scale = transform.lossyScale;
+            Vector3 position = transform.position;
+
             switch (capsule.direction)
             {
-                case 0: up = Vector3.right; break;
-                case 1: up = Vector3.up; break;
-                case 2: up = Vector3.forward; break;
+                case 0:
+                    up = Vector3.right;
+                    right = Vector3.up;
+                    forward = Vector3.forward;
+                    break;
+                case 1:
+                    up = Vector3.up;
+                    right = Vector3.right;
+                    forward = Vector3.forward;
+                    break;
+                case 2:
+                    up = Vector3.forward;
+                    right = Vector3.right;
+                    forward = Vector3.up;
+                    break;
             }
 
-            float cylinderHeight = Mathf.Max(0, height - 2f * radius);
-            Vector3 top = center + up * (cylinderHeight * 0.5f);
-            Vector3 bottom = center - up * (cylinderHeight * 0.5f);
+            float heightScale = Mathf.Abs(Vector3.Dot(scale, up));
+            float radiusScale = Mathf.Max(
+                Mathf.Abs(Vector3.Dot(scale, right)),
+                Mathf.Abs(Vector3.Dot(scale, forward))
+            );
 
-            Quaternion ringRot = Quaternion.FromToRotation(Vector3.up, up);
+            float scaledRadius = radius * radiusScale;
+            float scaledHeight = height * heightScale;
+            float cylinderHeight = Mathf.Max(0f, scaledHeight - 2f * scaledRadius);
+            
+            Vector3 worldCenter = position + rotation * Vector3.Scale(center, scale);
+            Vector3 worldUp = rotation * up;
+            Vector3 worldRight = rotation * right;
+            Vector3 worldForward = rotation * forward;
+
+            Vector3 top = worldCenter + worldUp * (cylinderHeight * 0.5f);
+            Vector3 bottom = worldCenter - worldUp * (cylinderHeight * 0.5f);
+
+            DrawWireCapsuleBody(top, bottom, worldUp, worldRight, worldForward, scaledRadius);
+            DrawWireCapsuleCap(top, worldUp, worldRight, worldForward, scaledRadius, true);
+            DrawWireCapsuleCap(bottom, worldUp, worldRight, worldForward, scaledRadius, false);
+        }
+        private void DrawWireCapsuleBody(Vector3 top, Vector3 bottom, Vector3 up, Vector3 right, Vector3 forward, float radius)
+        {
             float angleStep = 360f / wireSegments;
 
             for (int i = 0; i < wireSegments; i++)
             {
-                float a0 = Mathf.Deg2Rad * i * angleStep;
-                float a1 = Mathf.Deg2Rad * (i + 1) * angleStep;
+                float angle0 = Mathf.Deg2Rad * i * angleStep;
+                float angle1 = Mathf.Deg2Rad * (i + 1) * angleStep;
 
-                Vector3 dirA = new Vector3(Mathf.Cos(a0), 0, Mathf.Sin(a0));
-                Vector3 dirB = new Vector3(Mathf.Cos(a1), 0, Mathf.Sin(a1));
+                Vector3 dir0 = (right * Mathf.Cos(angle0) + forward * Mathf.Sin(angle0)) * radius;
+                Vector3 dir1 = (right * Mathf.Cos(angle1) + forward * Mathf.Sin(angle1)) * radius;
 
-                Vector3 offsetA = ringRot * dirA * radius;
-                Vector3 offsetB = ringRot * dirB * radius;
+                GL.Vertex(top + dir0);
+                GL.Vertex(bottom + dir0);
 
-                GL.Vertex(top + offsetA);
-                GL.Vertex(bottom + offsetA);
-                GL.Vertex(top + offsetA);
-                GL.Vertex(top + offsetB);
-                GL.Vertex(bottom + offsetA);
-                GL.Vertex(bottom + offsetB);
+                GL.Vertex(top + dir0);
+                GL.Vertex(top + dir1);
 
-                DrawArc(top, offsetA.normalized, up, radius, capsuleArcSegments);
-                DrawArc(bottom, offsetA.normalized, -up, radius, capsuleArcSegments);
+                GL.Vertex(bottom + dir0);
+                GL.Vertex(bottom + dir1);
             }
         }
 
-        private void DrawArc(Vector3 center, Vector3 tangent, Vector3 normal, float radius, int segments)
+        private void DrawWireCapsuleCap(Vector3 center, Vector3 up, Vector3 right, Vector3 forward, float radius, bool isTop)
         {
-            Vector3 bitangent = Vector3.Cross(normal, tangent).normalized;
-            tangent = Vector3.Cross(bitangent, normal).normalized;
+            int arcSegments = capsuleArcSegments;
+            float arcStep = 90f / arcSegments;
 
-            float angleStep = Mathf.PI / segments;
-
-            for (int i = 0; i < segments; i++)
+            for (int i = 0; i < 360; i += 360 / wireSegments)
             {
-                float a0 = i * angleStep;
-                float a1 = (i + 1) * angleStep;
+                float rad = Mathf.Deg2Rad * i;
+                Vector3 baseDir = (right * Mathf.Cos(rad) + forward * Mathf.Sin(rad)).normalized;
 
-                Vector3 p0 = center + Mathf.Cos(a0) * tangent * radius + Mathf.Sin(a0) * normal * radius;
-                Vector3 p1 = center + Mathf.Cos(a1) * tangent * radius + Mathf.Sin(a1) * normal * radius;
+                Vector3 from = baseDir * radius;
 
-                GL.Vertex(p0);
-                GL.Vertex(p1);
+                Vector3 axis = Vector3.Cross(baseDir, up).normalized;
+                if (!isTop)
+                    axis = -axis;
+
+                Quaternion rot = Quaternion.AngleAxis(arcStep, axis);
+
+                for (int j = 0; j < arcSegments; j++)
+                {
+                    Vector3 to = rot * from;
+                    GL.Vertex(center + from);
+                    GL.Vertex(center + to);
+                    from = to;
+                }
             }
         }
 
